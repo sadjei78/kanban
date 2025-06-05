@@ -401,7 +401,11 @@ export const KanbanBoard: React.FC = () => {
               onChange={handleRestore}
             />
           </Button>
-          <Button variant="outlined" sx={{ mr: 1 }} onClick={() => setRestoreUrlDialogOpen(true)}>
+          <Button
+            variant="outlined"
+            sx={{ mr: 1 }}
+            onClick={() => setRestoreUrlDialogOpen(true)}
+          >
             Restore from URL
           </Button>
           <Button variant="outlined" onClick={() => setBulkDialogOpen(true)}>
@@ -503,6 +507,24 @@ export const KanbanBoard: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setRestorePasswordDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={doRestore} disabled={!restorePassword}>Restore</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={restoreUrlDialogOpen} onClose={() => setRestoreUrlDialogOpen(false)}>
+        <DialogTitle>Restore from URL</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Paste JSON URL"
+            value={restoreUrl}
+            onChange={e => setRestoreUrl(e.target.value)}
+            fullWidth
+            autoFocus
+            error={!!restoreUrlError}
+            helperText={restoreUrlError}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRestoreUrlDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleRestoreFromUrl} disabled={!restoreUrl}>Restore</Button>
         </DialogActions>
       </Dialog>
     </Container>
