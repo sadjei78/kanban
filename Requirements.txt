@@ -1,0 +1,51 @@
+Kanban Board
+
+Lanes:
+- Backlog
+- In Progress
+- On Hold
+- Complete
+- Archived
+
+Cards created in each lane should be draggable to other lanes. 
+
+Cards should have the following fields: 
+- Title
+- Description
+- Category (prioritized dropdown with color coded options)
+    - Personal
+    - Work: CHS
+    - Work: Cargill
+    - Work: RBA
+    - Work: Other
+    - Church
+    - AGLOW
+    - Other
+- Status
+- Priority (number 1-5)
+- Tags (allow multiple tags; semi-colon separated; choose from list of existing tags; allow new tags)
+- Comments (allow multiple comments; date and time of comment; commenter; comment text; Truncated; Display full text on hover)
+- Due Date (date picker)
+- Created Date (added as a footer on the card)
+- Updated Date (added as a footer on the card)
+
+For Backlog, Complete, and Archived lanes, the card size should be small. 
+
+
+Sorting:
+    - Category (based on category priority)
+    - Priority (ascending)
+    - Due Date (descending)
+    - Date Created (ascending)
+    - Date Updated (descending)
+    - Title (ascending)
+
+When cards are dragged to a lane, the cards in the lane shoulds be resorted. 
+
+Allow minimizing cards to allow for more cards to be visible. 
+
+Allow hiding the Kanban board and adding a filter to the top of the page to filter cards by category, priority, due date, and status. 
+
+Allow adding a new card to the Kanban board. 
+
+
