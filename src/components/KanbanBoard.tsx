@@ -8,8 +8,7 @@ import { BulkUploadDialog } from './BulkUploadDialog';
 import { Card as CardComponent } from './Card';
 import CryptoJS from 'crypto-js';
 // @ts-ignore
-import QRCodeImport from 'qrcode.react';
-const QRCode = QRCodeImport as unknown as React.ComponentType<any>;
+import QRCode from 'qrcode.react';
 // @ts-ignore
 import QrReaderImport from 'react-qr-reader';
 const QrReader: React.FC<any> = QrReaderImport as any;
@@ -612,6 +611,7 @@ export const KanbanBoard: React.FC = () => {
         <DialogTitle>Scan to Backup (Tesla)</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>
+            {/* @ts-ignore */}
             <QRCode value={qrValue} size={256} />
             <TextField
               label="QR Data (for copy/paste if needed)"
