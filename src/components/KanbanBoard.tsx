@@ -70,7 +70,7 @@ function isTeslaBrowser() {
     ua.includes("Tesla") ||
     ua.includes("QtCarBrowser") ||
     ua.includes("QtWebEngine") ||
-    (ua.includes("X11; U; Linux armv7l") && ua.includes("Chrome"))
+    (ua.includes("X11;") && ua.includes("Linux") && ua.includes("Chrome"))
   );
 }
 
