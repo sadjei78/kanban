@@ -7,6 +7,12 @@ import { AddCardDialog } from './AddCardDialog';
 import { BulkUploadDialog } from './BulkUploadDialog';
 import { Card as CardComponent } from './Card';
 import CryptoJS from 'crypto-js';
+// @ts-ignore
+import QRCodeImport from 'qrcode.react';
+// @ts-ignore
+import QrReaderImport from 'react-qr-reader';
+const QRCode: React.FC<any> = QRCodeImport as any;
+const QrReader: React.FC<any> = QrReaderImport as any;
 
 const initialLanes: LaneType[] = [
   { id: 'Backlog', title: 'Backlog', cards: [] },
@@ -113,6 +119,10 @@ export const KanbanBoard: React.FC = () => {
   const [restorePassword, setRestorePassword] = useState('');
   const [pendingRestoreData, setPendingRestoreData] = useState<string | null>(null);
   const [restorePasswordError, setRestorePasswordError] = useState('');
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [qrValue, setQrValue] = useState('');
+  const [qrImportDialogOpen, setQrImportDialogOpen] = useState(false);
+  const [qrImportError, setQrImportError] = useState('');
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -268,9 +278,16 @@ export const KanbanBoard: React.FC = () => {
     );
   };
 
-  // Backup: Download encrypted JSON
+  // Backup: Download encrypted JSON or show QR for Tesla
   const handleBackup = () => {
-    setBackupPasswordDialogOpen(true);
+    if (isTeslaBrowser()) {
+      // For now, use the full board state as the QR content (stringified, encrypted)
+      const dataStr = JSON.stringify(lanes, null, 2);
+      setQrValue(dataStr);
+      setQrDialogOpen(true);
+    } else {
+      setBackupPasswordDialogOpen(true);
+    }
   };
 
   const doBackup = () => {
@@ -389,6 +406,31 @@ export const KanbanBoard: React.FC = () => {
     cards: categoryFilter ? lane.cards.filter(card => card.category === categoryFilter) : lane.cards,
   }));
 
+  // QR Import handler
+  const handleQrScan = (data: string | null) => {
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        // For now, replace the board state with the imported data
+        parsed.forEach((lane: LaneType) => {
+          lane.cards.forEach((card: CardType) => {
+            card.dueDate = card.dueDate ? new Date(card.dueDate) : new Date();
+            card.createdDate = card.createdDate ? new Date(card.createdDate) : new Date();
+            card.updatedDate = card.updatedDate ? new Date(card.updatedDate) : new Date();
+          });
+        });
+        setLanes(parsed);
+        setQrImportDialogOpen(false);
+        setQrImportError('');
+      } catch (err) {
+        setQrImportError('Invalid QR code data.');
+      }
+    }
+  };
+  const handleQrError = (err: any) => {
+    setQrImportError('QR scan error.');
+  };
+
   return (
     <Container maxWidth="xl" sx={{ py: 1 }}>
       <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
@@ -444,9 +486,11 @@ export const KanbanBoard: React.FC = () => {
           <Button variant="outlined" onClick={() => setBulkDialogOpen(true)}>
             Bulk Upload
           </Button>
-          <Button variant="outlined" sx={{ ml: 1 }} onClick={() => alert(`Browser detected: ${getBrowserInfo()}\nUser Agent: ${navigator.userAgent}`)}>
-            Browser
-          </Button>
+          {!isTeslaBrowser() && (
+            <Button variant="outlined" sx={{ ml: 1 }} onClick={() => setQrImportDialogOpen(true)}>
+              Scan QR to Import
+            </Button>
+          )}
         </Box>
       </Box>
       <Paper sx={{ p: 1, backgroundColor: '#f8f9fa' }}>
@@ -561,6 +605,46 @@ export const KanbanBoard: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setRestoreUrlDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleRestoreFromUrl} disabled={!restoreUrl}>Restore</Button>
+        </DialogActions>
+      </Dialog>
+      {/* QR Code backup dialog for Tesla */}
+      <Dialog open={qrDialogOpen} onClose={() => setQrDialogOpen(false)}>
+        <DialogTitle>Scan to Backup (Tesla)</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>
+            <QRCode value={qrValue} size={256} />
+            <TextField
+              label="QR Data (for copy/paste if needed)"
+              value={qrValue}
+              multiline
+              fullWidth
+              sx={{ mt: 2 }}
+              InputProps={{ readOnly: true }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQrDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+      {/* QR Import dialog for mobile/desktop */}
+      <Dialog open={qrImportDialogOpen} onClose={() => setQrImportDialogOpen(false)}>
+        <DialogTitle>Scan QR to Import Board</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>
+            <QrReader
+              delay={300}
+              onError={handleQrError}
+              onScan={handleQrScan}
+              style={{ width: '100%' }}
+            />
+            {qrImportError && (
+              <Box sx={{ color: 'red', mt: 2 }}>{qrImportError}</Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQrImportDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Container>
