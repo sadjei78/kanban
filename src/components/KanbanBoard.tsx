@@ -64,6 +64,25 @@ const categorySortOrder: Record<CategoryType, number> = {
   'Other': 99,
 };
 
+function getBrowserInfo() {
+  const ua = navigator.userAgent;
+  if (ua.indexOf("Tesla") > -1) {
+    return "Tesla Browser";
+  } else if (ua.indexOf("Chrome") > -1 && ua.indexOf("Edg") === -1 && ua.indexOf("OPR") === -1) {
+    return "Chrome";
+  } else if (ua.indexOf("Safari") > -1 && ua.indexOf("Chrome") === -1) {
+    return "Safari";
+  } else if (ua.indexOf("Firefox") > -1) {
+    return "Firefox";
+  } else if (ua.indexOf("Edg") > -1) {
+    return "Edge";
+  } else if (ua.indexOf("OPR") > -1) {
+    return "Opera";
+  } else {
+    return "Other";
+  }
+}
+
 export const KanbanBoard: React.FC = () => {
   const [lanes, setLanes] = useState<LaneType[]>(initialLanes);
   const [sortOption, setSortOption] = useState<SortOption>({
@@ -276,8 +295,12 @@ export const KanbanBoard: React.FC = () => {
   // Restore: from URL
   const handleRestoreFromUrl = async () => {
     setRestoreUrlError('');
+    let url = restoreUrl;
+    if (url.startsWith('~')) {
+      url = 'https://sadjei78.github.io/kanban/backups/' + url.slice(1);
+    }
     try {
-      const response = await fetch(restoreUrl);
+      const response = await fetch(url);
       if (!response.ok) throw new Error('Network response was not ok');
       const text = await response.text();
       setPendingRestoreData(text);
@@ -410,6 +433,9 @@ export const KanbanBoard: React.FC = () => {
           </Button>
           <Button variant="outlined" onClick={() => setBulkDialogOpen(true)}>
             Bulk Upload
+          </Button>
+          <Button variant="outlined" sx={{ ml: 1 }} onClick={() => alert(`Browser detected: ${getBrowserInfo()}`)}>
+            Browser
           </Button>
         </Box>
       </Box>
