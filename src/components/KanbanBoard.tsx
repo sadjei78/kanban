@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Container, Paper, Button, Chip, Stack, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Typography } from '@mui/material';
+import { Box, Container, Paper, Button, Chip, Stack, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Typography, Switch, FormControlLabel } from '@mui/material';
 import { DragDropContext, DropResult } from 'react-beautiful-dnd';
 import { Lane as LaneType, Card as CardType, SortOption, CategoryType } from '../types';
 import { Lane } from './Lane';
@@ -22,6 +22,7 @@ function generateId() {
 }
 
 const LOCAL_STORAGE_KEY = 'kanban-board-lanes';
+const LAST_SYNC_KEY = 'kanban-board-last-sync';
 
 const categoryColors: Record<string, string> = {
   'Personal': '#81C784',
@@ -65,7 +66,8 @@ const categorySortOrder: Record<CategoryType, number> = {
   'Other': 99,
 };
 
-function isTeslaBrowser() {
+function isTeslaBrowser(override?: boolean) {
+  if (override) return true;
   const ua = navigator.userAgent;
   return (
     ua.includes("Tesla") ||
@@ -98,6 +100,101 @@ function isMobileDevice() {
   return /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
+// Helper: QR code max safe length (for version 40, low error correction, ~2953 bytes)
+const MAX_QR_TEXT_LENGTH = 2950;
+
+// Helper: Get all cards as a flat array with lane info
+function flattenCards(lanes: LaneType[]): (CardType & { laneId: string })[] {
+  return lanes.flatMap((lane: LaneType) => lane.cards.map((card: CardType) => ({ ...card, laneId: lane.id })));
+}
+
+// Helper: Get changed fields between two cards
+function getChangedFields(current: CardType & { laneId: string }, prev?: CardType & { laneId: string }) {
+  const changed: any = { id: current.id };
+  let hasChange = false;
+  // Always include laneId if changed (for moves)
+  if (!prev || current.laneId !== prev.laneId) {
+    changed.laneId = current.laneId;
+    hasChange = true;
+  }
+  // Compare each field (except id, laneId)
+  [
+    'title',
+    'description',
+    'category',
+    'status',
+    'priority',
+    'tags',
+    'comments',
+    'dueDate',
+    'createdDate',
+    'updatedDate',
+    'isMinimized',
+  ].forEach((key) => {
+    if (!prev || JSON.stringify(current[key as keyof CardType]) !== JSON.stringify(prev[key as keyof CardType])) {
+      changed[key as keyof CardType] = current[key as keyof CardType];
+      hasChange = true;
+    }
+  });
+  return hasChange ? changed : null;
+}
+
+// Helper: Compute diff between two board states (only changed fields)
+function computeBoardDiff(currentLanes: LaneType[], lastSyncLanes: LaneType[]) {
+  const currentCards = flattenCards(currentLanes);
+  const lastCards = flattenCards(lastSyncLanes);
+  const lastCardsById: Record<string, CardType & { laneId: string }> = Object.fromEntries(lastCards.map((card) => [card.id, card]));
+  const currentCardsById: Record<string, CardType & { laneId: string }> = Object.fromEntries(currentCards.map((card) => [card.id, card]));
+
+  // Changed or added cards (only changed fields)
+  const updatedCards = currentCards
+    .map((card) => getChangedFields(card, lastCardsById[card.id]))
+    .filter((c) => c);
+
+  // Deleted cards
+  const deletedCardIds = lastCards
+    .filter((card) => !currentCardsById[card.id])
+    .map((card) => card.id);
+
+  return { updatedCards, deletedCardIds };
+}
+
+// Helper: Apply diff to board (only update specified fields)
+function applyBoardDiff(lanes: LaneType[], diff: { updatedCards: any[]; deletedCardIds: string[] }): LaneType[] {
+  let newLanes = lanes.map((lane: LaneType): LaneType => ({ ...lane, cards: [...lane.cards] }));
+  // Remove deleted cards
+  if (diff.deletedCardIds && diff.deletedCardIds.length > 0) {
+    newLanes = newLanes.map((lane: LaneType): LaneType => ({
+      ...lane,
+      cards: lane.cards.filter((card: CardType): boolean => !diff.deletedCardIds.includes(card.id)),
+    }));
+  }
+  // Add/update changed cards
+  if (diff.updatedCards && diff.updatedCards.length > 0) {
+    diff.updatedCards.forEach((patch) => {
+      // Find the lane to put the card in
+      const laneIdx = patch.laneId ? newLanes.findIndex((l) => l.id === patch.laneId) : -1;
+      if (laneIdx === -1) return;
+      const cardIdx = newLanes[laneIdx].cards.findIndex((c) => c.id === patch.id);
+      if (cardIdx === -1) {
+        // New card: add with only the provided fields
+        newLanes[laneIdx].cards.push({ ...patch });
+      } else {
+        // Existing card: patch only the changed fields
+        newLanes[laneIdx].cards[cardIdx] = { ...newLanes[laneIdx].cards[cardIdx], ...patch };
+      }
+      // Remove from other lanes if moved
+      newLanes = newLanes.map((lane, idx) => {
+        if (idx !== laneIdx) {
+          return { ...lane, cards: lane.cards.filter((c) => c.id !== patch.id) };
+        }
+        return lane;
+      });
+    });
+  }
+  return newLanes;
+}
+
 const KanbanBoard: React.FC = () => {
   const [lanes, setLanes] = useState<LaneType[]>(initialLanes);
   const [sortOption, setSortOption] = useState<SortOption>({
@@ -123,13 +220,18 @@ const KanbanBoard: React.FC = () => {
   const [qrImportDialogOpen, setQrImportDialogOpen] = useState(false);
   const [qrImportError, setQrImportError] = useState('');
   const [showQrScanner, setShowQrScanner] = useState(false);
+  const [isTeslaBrowserOverride, setIsTeslaBrowserOverride] = useState(false);
+  const [lastSyncLanes, setLastSyncLanes] = useState<LaneType[] | null>(null);
+  const [changeSummary, setChangeSummary] = useState<string>('');
+  const [pendingQrDiff, setPendingQrDiff] = useState<any | null>(null);
+  const [pendingQrSummary, setPendingQrSummary] = useState<string>('');
+  const [showQrImportSummary, setShowQrImportSummary] = useState(false);
 
   // Load from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Convert date strings back to Date objects, always assign Date
       parsed.forEach((lane: LaneType) => {
         lane.cards.forEach((card: CardType) => {
           card.dueDate = card.dueDate ? new Date(card.dueDate) : new Date();
@@ -138,6 +240,14 @@ const KanbanBoard: React.FC = () => {
         });
       });
       setLanes(parsed);
+      // Reset lastSyncLanes to the loaded board on first load
+      setLastSyncLanes(parsed);
+      localStorage.setItem(LAST_SYNC_KEY, JSON.stringify(parsed));
+    }
+    // Also load last sync if present and not already set
+    const lastSync = localStorage.getItem(LAST_SYNC_KEY);
+    if (lastSync && lastSyncLanes === null) {
+      setLastSyncLanes(JSON.parse(lastSync));
     }
   }, []);
 
@@ -145,6 +255,11 @@ const KanbanBoard: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(lanes));
   }, [lanes]);
+
+  // Save last sync lanes
+  useEffect(() => {
+    localStorage.setItem(LAST_SYNC_KEY, JSON.stringify(lastSyncLanes));
+  }, [lastSyncLanes]);
 
   const handleDragEnd = (result: DropResult) => {
     const { source, destination } = result;
@@ -280,10 +395,24 @@ const KanbanBoard: React.FC = () => {
 
   // Backup: Download encrypted JSON or show QR for Tesla
   const handleBackup = () => {
-    if (isTeslaBrowser()) {
-      // For now, use the full board state as the QR content (stringified, encrypted)
-      const dataStr = JSON.stringify(lanes, null, 2);
+    if (isTeslaBrowser(isTeslaBrowserOverride)) {
+      if (!lastSyncLanes) {
+        // Not ready yet
+        setQrValue('Board not loaded yet. Please try again.');
+        setQrDialogOpen(true);
+        return;
+      }
+      // Only QR the diff
+      const diff = computeBoardDiff(lanes, lastSyncLanes);
+      const dataStr = JSON.stringify(diff, null, 2);
       setQrValue(dataStr);
+      // Count changes for label
+      let fieldCount = 0;
+      diff.updatedCards.forEach((patch: any) => {
+        // Exclude id and laneId from field count
+        fieldCount += Object.keys(patch).filter(k => k !== 'id' && k !== 'laneId').length;
+      });
+      setChangeSummary(`${diff.updatedCards.length} card${diff.updatedCards.length !== 1 ? 's' : ''} changed; ${fieldCount} field${fieldCount !== 1 ? 's' : ''} changed`);
       setQrDialogOpen(true);
     } else {
       setBackupPasswordDialogOpen(true);
@@ -410,8 +539,23 @@ const KanbanBoard: React.FC = () => {
   const handleQrScan = (text: string) => {
     try {
       const data = JSON.parse(text);
-      if (data.lanes && Array.isArray(data.lanes)) {
+      if (data.updatedCards && data.deletedCardIds) {
+        // It's a diff - show summary before applying
+        let fieldCount = 0;
+        data.updatedCards.forEach((patch: any) => {
+          fieldCount += Object.keys(patch).filter(k => k !== 'id' && k !== 'laneId').length;
+        });
+        const summary = `${data.updatedCards.length} card${data.updatedCards.length !== 1 ? 's' : ''} changed; ${fieldCount} field${fieldCount !== 1 ? 's' : ''} changed; ${data.deletedCardIds.length} card${data.deletedCardIds.length !== 1 ? 's' : ''} deleted`;
+        setPendingQrDiff(data);
+        setPendingQrSummary(summary);
+        setShowQrImportSummary(true);
+        setQrImportDialogOpen(false);
+        setQrImportError('');
+      } else if (data.lanes && Array.isArray(data.lanes)) {
+        // Fallback: full board
         setLanes(data.lanes);
+        setLastSyncLanes(data.lanes);
+        localStorage.setItem(LAST_SYNC_KEY, JSON.stringify(data.lanes));
         setQrImportDialogOpen(false);
         setQrImportError('');
       } else {
@@ -422,6 +566,25 @@ const KanbanBoard: React.FC = () => {
     }
   };
 
+  // Apply the pending QR diff after user confirms
+  const handleApplyQrDiff = () => {
+    if (pendingQrDiff) {
+      const newLanes = applyBoardDiff(lanes, pendingQrDiff);
+      setLanes(newLanes);
+      setLastSyncLanes(newLanes);
+      localStorage.setItem(LAST_SYNC_KEY, JSON.stringify(newLanes));
+    }
+    setPendingQrDiff(null);
+    setPendingQrSummary('');
+    setShowQrImportSummary(false);
+  };
+
+  const handleCancelQrDiff = () => {
+    setPendingQrDiff(null);
+    setPendingQrSummary('');
+    setShowQrImportSummary(false);
+  };
+
   const handleQrError = (error: Error) => {
     setQrImportError(error.message);
   };
@@ -429,6 +592,16 @@ const KanbanBoard: React.FC = () => {
   return (
     <Container maxWidth="xl" sx={{ py: 1 }}>
       <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={isTeslaBrowserOverride}
+              onChange={(_, checked) => setIsTeslaBrowserOverride(checked)}
+              color="primary"
+            />
+          }
+          label="Mimic Tesla Browser"
+        />
         <Chip
           label="All"
           color={categoryFilter === null ? 'primary' : 'default'}
@@ -481,9 +654,14 @@ const KanbanBoard: React.FC = () => {
           <Button variant="outlined" onClick={() => setBulkDialogOpen(true)}>
             Bulk Upload
           </Button>
-          {isMobileDevice() && !isTeslaBrowser() && (
+          {isMobileDevice() && !isTeslaBrowser(isTeslaBrowserOverride) && (
             <Button variant="outlined" sx={{ ml: 1 }} onClick={() => setQrImportDialogOpen(true)}>
               Scan QR to Import
+            </Button>
+          )}
+          {isTeslaBrowser(isTeslaBrowserOverride) && (
+            <Button variant="outlined" sx={{ ml: 1 }} onClick={handleBackup}>
+              Tesla Backup (QR)
             </Button>
           )}
         </Box>
@@ -607,8 +785,20 @@ const KanbanBoard: React.FC = () => {
         <DialogTitle>Scan to Backup (Tesla)</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>
+            {changeSummary && (
+              <Typography sx={{ mb: 2 }} color="primary">
+                {changeSummary}
+              </Typography>
+            )}
             {/* @ts-ignore */}
-            <QRCode value={qrValue} size={256} />
+            {qrValue.length > MAX_QR_TEXT_LENGTH ? (
+              <Typography color="error" sx={{ mb: 2 }}>
+                Board too large to export as QR code.<br />
+                Please reduce the number of cards or use file backup.
+              </Typography>
+            ) : (
+              <QRCode value={qrValue} size={256} />
+            )}
             <TextField
               label="QR Data (for copy/paste if needed)"
               value={qrValue}
@@ -644,6 +834,45 @@ const KanbanBoard: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setQrImportDialogOpen(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+      {/* QR Import summary dialog */}
+      <Dialog open={showQrImportSummary} onClose={handleCancelQrDiff}>
+        <DialogTitle>QR Import Summary</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 2 }} color="primary">
+            {pendingQrSummary}
+          </Typography>
+          {pendingQrDiff && pendingQrDiff.updatedCards.length > 0 && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2">Changed/Added Cards:</Typography>
+              <ul>
+                {pendingQrDiff.updatedCards.map((patch: any) => (
+                  <li key={patch.id}>
+                    Card ID: {patch.id}
+                    {patch.title && <> — <b>{patch.title}</b></>}
+                    {Object.keys(patch).filter(k => k !== 'id' && k !== 'laneId').length > 0 && (
+                      <> (Fields: {Object.keys(patch).filter(k => k !== 'id' && k !== 'laneId').join(', ')})</>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Box>
+          )}
+          {pendingQrDiff && pendingQrDiff.deletedCardIds.length > 0 && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2">Deleted Cards:</Typography>
+              <ul>
+                {pendingQrDiff.deletedCardIds.map((id: string) => (
+                  <li key={id}>Card ID: {id}</li>
+                ))}
+              </ul>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelQrDiff}>Cancel</Button>
+          <Button variant="contained" onClick={handleApplyQrDiff}>Apply</Button>
         </DialogActions>
       </Dialog>
       <QRScanner
