@@ -9,9 +9,9 @@ import { Card as CardComponent } from './Card';
 import CryptoJS from 'crypto-js';
 // @ts-ignore
 import QRCodeImport from 'qrcode.react';
+const QRCode = QRCodeImport as unknown as React.ComponentType<any>;
 // @ts-ignore
 import QrReaderImport from 'react-qr-reader';
-const QRCode: React.FC<any> = QRCodeImport as any;
 const QrReader: React.FC<any> = QrReaderImport as any;
 
 const initialLanes: LaneType[] = [
