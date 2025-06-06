@@ -64,9 +64,19 @@ const categorySortOrder: Record<CategoryType, number> = {
   'Other': 99,
 };
 
+function isTeslaBrowser() {
+  const ua = navigator.userAgent;
+  return (
+    ua.includes("Tesla") ||
+    ua.includes("QtCarBrowser") ||
+    ua.includes("QtWebEngine") ||
+    (ua.includes("X11; U; Linux armv7l") && ua.includes("Chrome"))
+  );
+}
+
 function getBrowserInfo() {
   const ua = navigator.userAgent;
-  if (ua.indexOf("Tesla") > -1) {
+  if (isTeslaBrowser()) {
     return "Tesla Browser";
   } else if (ua.indexOf("Chrome") > -1 && ua.indexOf("Edg") === -1 && ua.indexOf("OPR") === -1) {
     return "Chrome";
@@ -434,7 +444,7 @@ export const KanbanBoard: React.FC = () => {
           <Button variant="outlined" onClick={() => setBulkDialogOpen(true)}>
             Bulk Upload
           </Button>
-          <Button variant="outlined" sx={{ ml: 1 }} onClick={() => alert(`Browser detected: ${getBrowserInfo()}`)}>
+          <Button variant="outlined" sx={{ ml: 1 }} onClick={() => alert(`Browser detected: ${getBrowserInfo()}\nUser Agent: ${navigator.userAgent}`)}>
             Browser
           </Button>
         </Box>
