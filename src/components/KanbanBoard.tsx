@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Container, Paper, Button, Chip, Stack, Dialog, DialogTitle, DialogContent, DialogActions, TextField } from '@mui/material';
+import { Box, Container, Paper, Button, Chip, Stack, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Typography } from '@mui/material';
 import { DragDropContext, DropResult } from 'react-beautiful-dnd';
 import { Lane as LaneType, Card as CardType, SortOption, CategoryType } from '../types';
 import { Lane } from './Lane';
 import { AddCardDialog } from './AddCardDialog';
 import { BulkUploadDialog } from './BulkUploadDialog';
-import { Card as CardComponent } from './Card';
-import CryptoJS from 'crypto-js';
-// @ts-ignore
 import QRCode from 'qrcode.react';
-import { QrReader } from 'react-qr-reader';
+import QRScanner from './QRScanner';
+import CryptoJS from 'crypto-js';
 
 const initialLanes: LaneType[] = [
   { id: 'Backlog', title: 'Backlog', cards: [] },
@@ -96,7 +94,11 @@ function getBrowserInfo() {
   }
 }
 
-export const KanbanBoard: React.FC = () => {
+function isMobileDevice() {
+  return /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+const KanbanBoard: React.FC = () => {
   const [lanes, setLanes] = useState<LaneType[]>(initialLanes);
   const [sortOption, setSortOption] = useState<SortOption>({
     field: 'priority',
@@ -120,6 +122,7 @@ export const KanbanBoard: React.FC = () => {
   const [qrValue, setQrValue] = useState('');
   const [qrImportDialogOpen, setQrImportDialogOpen] = useState(false);
   const [qrImportError, setQrImportError] = useState('');
+  const [showQrScanner, setShowQrScanner] = useState(false);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -404,28 +407,23 @@ export const KanbanBoard: React.FC = () => {
   }));
 
   // QR Import handler
-  const handleQrScan = (data: string | null) => {
-    if (data) {
-      try {
-        const parsed = JSON.parse(data);
-        // For now, replace the board state with the imported data
-        parsed.forEach((lane: LaneType) => {
-          lane.cards.forEach((card: CardType) => {
-            card.dueDate = card.dueDate ? new Date(card.dueDate) : new Date();
-            card.createdDate = card.createdDate ? new Date(card.createdDate) : new Date();
-            card.updatedDate = card.updatedDate ? new Date(card.updatedDate) : new Date();
-          });
-        });
-        setLanes(parsed);
+  const handleQrScan = (text: string) => {
+    try {
+      const data = JSON.parse(text);
+      if (data.lanes && Array.isArray(data.lanes)) {
+        setLanes(data.lanes);
         setQrImportDialogOpen(false);
         setQrImportError('');
-      } catch (err) {
-        setQrImportError('Invalid QR code data.');
+      } else {
+        setQrImportError('Invalid QR code data format');
       }
+    } catch (error) {
+      setQrImportError('Failed to parse QR code data');
     }
   };
-  const handleQrError = (err: any) => {
-    setQrImportError('QR scan error.');
+
+  const handleQrError = (error: Error) => {
+    setQrImportError(error.message);
   };
 
   return (
@@ -483,7 +481,7 @@ export const KanbanBoard: React.FC = () => {
           <Button variant="outlined" onClick={() => setBulkDialogOpen(true)}>
             Bulk Upload
           </Button>
-          {!isTeslaBrowser() && (
+          {isMobileDevice() && !isTeslaBrowser() && (
             <Button variant="outlined" sx={{ ml: 1 }} onClick={() => setQrImportDialogOpen(true)}>
               Scan QR to Import
             </Button>
@@ -627,25 +625,34 @@ export const KanbanBoard: React.FC = () => {
       </Dialog>
       {/* QR Import dialog for mobile/desktop */}
       <Dialog open={qrImportDialogOpen} onClose={() => setQrImportDialogOpen(false)}>
-        <DialogTitle>Scan QR to Import Board</DialogTitle>
+        <DialogTitle>Import from QR Code</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>
-            <QrReader
-              constraints={{ facingMode: 'environment' }}
-              onResult={(result, error) => {
-                if (!!result) handleQrScan(result.getText());
-                if (!!error) handleQrError(error);
-              }}
-            />
+            <Button
+              variant="contained"
+              onClick={() => setShowQrScanner(true)}
+              sx={{ mb: 2 }}
+            >
+              Scan QR Code
+            </Button>
             {qrImportError && (
-              <Box sx={{ color: 'red', mt: 2 }}>{qrImportError}</Box>
+              <Typography color="error" sx={{ mt: 2 }}>
+                {qrImportError}
+              </Typography>
             )}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setQrImportDialogOpen(false)}>Close</Button>
+          <Button onClick={() => setQrImportDialogOpen(false)}>Cancel</Button>
         </DialogActions>
       </Dialog>
+      <QRScanner
+        open={showQrScanner}
+        onClose={() => setShowQrScanner(false)}
+        onScanSuccess={handleQrScan}
+      />
     </Container>
   );
-}; 
+};
+
+export default KanbanBoard; 

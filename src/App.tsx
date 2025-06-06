@@ -1,6 +1,7 @@
 import React from 'react';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
-import { KanbanBoard } from './components/KanbanBoard';
+import KanbanBoard from './components/KanbanBoard';
+import QRTest from './components/QRTest';
 
 const theme = createTheme({
   palette: {
@@ -33,6 +34,7 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <KanbanBoard />
+      <QRTest />
     </ThemeProvider>
   );
 }
