@@ -159,6 +159,24 @@ function computeBoardDiff(currentLanes: LaneType[], lastSyncLanes: LaneType[]) {
   return { updatedCards, deletedCardIds };
 }
 
+// Helper: Create a default card object, merging with patch
+function getDefaultCard(patch: any): CardType {
+  return {
+    id: patch.id,
+    title: patch.title || '',
+    description: patch.description || '',
+    category: patch.category || 'Other',
+    status: patch.status || patch.laneId || 'Backlog',
+    priority: patch.priority ?? 1,
+    tags: patch.tags || [],
+    comments: patch.comments || [],
+    dueDate: patch.dueDate ? new Date(patch.dueDate) : new Date(),
+    createdDate: patch.createdDate ? new Date(patch.createdDate) : new Date(),
+    updatedDate: patch.updatedDate ? new Date(patch.updatedDate) : new Date(),
+    isMinimized: patch.isMinimized ?? false,
+  };
+}
+
 // Helper: Apply diff to board (only update specified fields)
 function applyBoardDiff(lanes: LaneType[], diff: { updatedCards: any[]; deletedCardIds: string[] }): LaneType[] {
   let newLanes = lanes.map((lane: LaneType): LaneType => ({ ...lane, cards: [...lane.cards] }));
@@ -177,8 +195,8 @@ function applyBoardDiff(lanes: LaneType[], diff: { updatedCards: any[]; deletedC
       if (laneIdx === -1) return;
       const cardIdx = newLanes[laneIdx].cards.findIndex((c) => c.id === patch.id);
       if (cardIdx === -1) {
-        // New card: add with only the provided fields
-        newLanes[laneIdx].cards.push({ ...patch });
+        // New card: merge patch with defaults
+        newLanes[laneIdx].cards.push(getDefaultCard(patch));
       } else {
         // Existing card: patch only the changed fields
         newLanes[laneIdx].cards[cardIdx] = { ...newLanes[laneIdx].cards[cardIdx], ...patch };
