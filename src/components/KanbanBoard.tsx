@@ -9,9 +9,7 @@ import { Card as CardComponent } from './Card';
 import CryptoJS from 'crypto-js';
 // @ts-ignore
 import QRCode from 'qrcode.react';
-// @ts-ignore
-import QrReaderImport from 'react-qr-reader';
-const QrReader: React.FC<any> = QrReaderImport as any;
+import { QrReader } from 'react-qr-reader';
 
 const initialLanes: LaneType[] = [
   { id: 'Backlog', title: 'Backlog', cards: [] },
@@ -633,10 +631,11 @@ export const KanbanBoard: React.FC = () => {
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>
             <QrReader
-              delay={300}
-              onError={handleQrError}
-              onScan={handleQrScan}
-              style={{ width: '100%' }}
+              constraints={{ facingMode: 'environment' }}
+              onResult={(result, error) => {
+                if (!!result) handleQrScan(result.getText());
+                if (!!error) handleQrError(error);
+              }}
             />
             {qrImportError && (
               <Box sx={{ color: 'red', mt: 2 }}>{qrImportError}</Box>
