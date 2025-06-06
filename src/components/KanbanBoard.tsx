@@ -159,26 +159,26 @@ function computeBoardDiff(currentLanes: LaneType[], lastSyncLanes: LaneType[]) {
   return { updatedCards, deletedCardIds };
 }
 
-// Helper: Create a default card object, merging with patch
-function getDefaultCard(patch: any): CardType {
+// Helper: Create a default card object, merging with patch and current value
+function getDefaultCard(patch: any, currVal?: CardType): CardType {
   return {
     id: patch.id,
-    title: patch.title || '',
-    description: patch.description || '',
-    category: patch.category || 'Other',
-    status: patch.status || patch.laneId || 'Backlog',
-    priority: patch.priority ?? 1,
-    tags: patch.tags || [],
-    comments: patch.comments || [],
-    dueDate: patch.dueDate ? new Date(patch.dueDate) : new Date(),
-    createdDate: patch.createdDate ? new Date(patch.createdDate) : new Date(),
-    updatedDate: patch.updatedDate ? new Date(patch.updatedDate) : new Date(),
-    isMinimized: patch.isMinimized ?? false,
+    title: patch.title ?? currVal?.title ?? '',
+    description: patch.description ?? currVal?.description ?? '',
+    category: patch.category ?? currVal?.category ?? 'Other',
+    status: patch.status ?? currVal?.status ?? patch.laneId ?? 'Backlog',
+    priority: patch.priority ?? currVal?.priority ?? 1,
+    tags: patch.tags ?? currVal?.tags ?? [],
+    comments: patch.comments ?? currVal?.comments ?? [],
+    dueDate: patch.dueDate ? new Date(patch.dueDate) : currVal?.dueDate ? new Date(currVal.dueDate) : new Date(),
+    createdDate: patch.createdDate ? new Date(patch.createdDate) : currVal?.createdDate ? new Date(currVal.createdDate) : new Date(),
+    updatedDate: patch.updatedDate ? new Date(patch.updatedDate) : currVal?.updatedDate ? new Date(currVal.updatedDate) : new Date(),
+    isMinimized: patch.isMinimized ?? currVal?.isMinimized ?? false,
   };
 }
 
 // Helper: Apply diff to board (only update specified fields)
-function applyBoardDiff(lanes: LaneType[], diff: { updatedCards: any[]; deletedCardIds: string[] }): LaneType[] {
+export function applyBoardDiff(lanes: LaneType[], diff: { updatedCards: any[]; deletedCardIds: string[] }): LaneType[] {
   let newLanes = lanes.map((lane: LaneType): LaneType => ({ ...lane, cards: [...lane.cards] }));
   // Remove deleted cards
   if (diff.deletedCardIds && diff.deletedCardIds.length > 0) {
@@ -193,21 +193,43 @@ function applyBoardDiff(lanes: LaneType[], diff: { updatedCards: any[]; deletedC
       // Find the lane to put the card in
       const laneIdx = patch.laneId ? newLanes.findIndex((l) => l.id === patch.laneId) : -1;
       if (laneIdx === -1) return;
-      const cardIdx = newLanes[laneIdx].cards.findIndex((c) => c.id === patch.id);
-      if (cardIdx === -1) {
-        // New card: merge patch with defaults
-        newLanes[laneIdx].cards.push(getDefaultCard(patch));
-      } else {
-        // Existing card: patch only the changed fields
-        newLanes[laneIdx].cards[cardIdx] = { ...newLanes[laneIdx].cards[cardIdx], ...patch };
-      }
-      // Remove from other lanes if moved
-      newLanes = newLanes.map((lane, idx) => {
-        if (idx !== laneIdx) {
-          return { ...lane, cards: lane.cards.filter((c) => c.id !== patch.id) };
+
+      // Find the card in the entire board (not just this lane)
+      let currVal: CardType | undefined;
+      for (const lane of newLanes) {
+        const found = lane.cards.find((c) => c.id === patch.id);
+        if (found) {
+          currVal = found;
+          break;
         }
-        return lane;
-      });
+      }
+
+      // Build the new card object: start with currVal, then patch, then defaults
+      const newCard: CardType = {
+        ...currVal, // all current values
+        ...patch,   // overwrite only fields present in patch
+        id: patch.id,
+        status: patch.status ?? currVal?.status ?? patch.laneId ?? 'Backlog',
+        category: patch.category ?? currVal?.category ?? 'Other',
+        title: patch.title ?? currVal?.title ?? '',
+        description: patch.description ?? currVal?.description ?? '',
+        priority: patch.priority ?? currVal?.priority ?? 1,
+        tags: patch.tags ?? currVal?.tags ?? [],
+        comments: patch.comments ?? currVal?.comments ?? [],
+        dueDate: patch.dueDate ? new Date(patch.dueDate) : currVal?.dueDate ? new Date(currVal.dueDate) : new Date(),
+        createdDate: patch.createdDate ? new Date(patch.createdDate) : currVal?.createdDate ? new Date(currVal.createdDate) : new Date(),
+        updatedDate: patch.updatedDate ? new Date(patch.updatedDate) : currVal?.updatedDate ? new Date(currVal.updatedDate) : new Date(),
+        isMinimized: patch.isMinimized ?? currVal?.isMinimized ?? false,
+      };
+
+      // Remove from all lanes (in case of move)
+      newLanes = newLanes.map((lane) => ({
+        ...lane,
+        cards: lane.cards.filter((c) => c.id !== patch.id),
+      }));
+
+      // Add to the correct lane
+      newLanes[laneIdx].cards.push(newCard);
     });
   }
   return newLanes;

@@ -40,8 +40,13 @@ export const Card: React.FC<CardProps> = ({ card, onMinimize, onTitleClick, onDo
       <Typography variant="subtitle2" fontWeight={700}>{card.title}</Typography>
       <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>{card.description}</Typography>
       <Typography variant="caption" color="text.secondary">
-        {card.status === 'Complete' ? 'Completed' : 'Archived'}: {closedDate}
+        Card ID: {card.id}
       </Typography>
+      {card.status === 'Complete' || card.status === 'Archived' ? (
+        <Typography variant="caption" color="text.secondary">
+          {card.status === 'Complete' ? 'Completed' : 'Archived'}: {closedDate}
+        </Typography>
+      ) : null}
     </Box>
   );
 
@@ -209,9 +214,9 @@ export const Card: React.FC<CardProps> = ({ card, onMinimize, onTitleClick, onDo
     </MuiCard>
   );
 
-  return showTooltip ? (
+  return (
     <Tooltip title={tooltipTitle} arrow placement="top" enterDelay={300} leaveDelay={100}>
       <span>{cardContent}</span>
     </Tooltip>
-  ) : cardContent;
+  );
 }; 
